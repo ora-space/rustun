@@ -1,6 +1,6 @@
 use std::io;
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use anyhow::Context;
@@ -16,6 +16,7 @@ pub fn run_daemon() -> anyhow::Result<()> {
         port: 22,
         user: default_user,
         password: std::env::var("RUSTUN_PASSWORD").ok(),
+        workdir: None,
     })
 }
 
@@ -23,7 +24,11 @@ pub fn run_daemon() -> anyhow::Result<()> {
 pub fn run_daemon_with_config(config: crate::types::DaemonConfig) -> anyhow::Result<()> {
     validate_daemon_config(&config)?;
 
-    let auth_mode = if config.password.is_some() { "password" } else { "default" };
+    let auth_mode = if config.password.is_some() {
+        "password"
+    } else {
+        "default"
+    };
     eprintln!(
         "rustund target: {}@{}:{} (auth: {})",
         config.user, config.host, config.port, auth_mode
@@ -75,7 +80,7 @@ pub fn run_daemon_with_config(config: crate::types::DaemonConfig) -> anyhow::Res
 }
 
 /// Validate that required fields are present for SSH authentication.
-fn validate_daemon_config(config: &crate::types::DaemonConfig) -> anyhow::Result<()> {
+pub(crate) fn validate_daemon_config(config: &crate::types::DaemonConfig) -> anyhow::Result<()> {
     if config.host.trim().is_empty() {
         anyhow::bail!("host must not be empty");
     }
@@ -95,14 +100,19 @@ fn validate_daemon_config(config: &crate::types::DaemonConfig) -> anyhow::Result
 }
 
 /// Handle a single accepted client connection: read Exec, then run SSH command bridge.
-fn handle_client(stream: crate::socket::LocalStream, config: crate::types::DaemonConfig) -> anyhow::Result<()> {
+fn handle_client(
+    stream: crate::socket::LocalStream,
+    config: crate::types::DaemonConfig,
+) -> anyhow::Result<()> {
     let mut reader = stream
         .try_clone()
         .context("failed to clone accepted stream for reading")?;
     let writer = Arc::new(Mutex::new(stream));
 
     let first = crate::codec::recv_message::<_, crate::types::ClientMessage>(&mut reader)?
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "missing first message"))?;
+        .ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "missing first message")
+        })?;
 
     let (program, args) = match first {
         crate::types::ClientMessage::Exec { program, args } => (program, args),
@@ -118,7 +128,8 @@ fn handle_client(stream: crate::socket::LocalStream, config: crate::types::Daemo
         }
     };
 
-    let remote_command = crate::ssh::render_remote_command(&program, &args);
+    let remote_command =
+        crate::ssh::render_remote_command_with_workdir(config.workdir.as_deref(), &program, &args);
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

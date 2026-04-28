@@ -81,12 +81,24 @@ mod tests {
     }
 
     #[test]
+    fn render_remote_command_prefixes_workdir_when_present() {
+        let rendered = ssh::render_remote_command_with_workdir(
+            Some("/srv/my app"),
+            "printf",
+            &["hello world".to_string()],
+        );
+
+        assert_eq!(rendered, "cd '/srv/my app' && printf 'hello world'");
+    }
+
+    #[test]
     fn daemon_config_requires_password_for_ssh_mode() {
         let config = types::DaemonConfig {
             host: "127.0.0.1".to_string(),
             port: 22,
             user: "root".to_string(),
             password: None,
+            workdir: None,
         };
 
         let err = daemon::validate_daemon_config(&config).expect_err("password should be required");

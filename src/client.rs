@@ -6,7 +6,7 @@ use anyhow::Context;
 
 /// Run the local client helper. Connects to the daemon socket, sends the Exec
 /// message, forwards stdin, and prints back server stdout/stderr until Exit.
-pub fn run_client(program: String, args: Vec<String>) -> anyhow::Result<i32> {
+pub fn run_client(command: String) -> anyhow::Result<i32> {
     let socket = crate::socket::socket_path()?;
     let mut writer = crate::socket::connect_socket(&socket)
         .with_context(|| format!("failed to connect daemon socket at {}", socket.display()))?;
@@ -14,7 +14,13 @@ pub fn run_client(program: String, args: Vec<String>) -> anyhow::Result<i32> {
         .try_clone()
         .context("failed to clone socket stream for reading")?;
 
-    crate::codec::send_message(&mut writer, &crate::types::ClientMessage::Exec { program, args })?;
+    crate::codec::send_message(
+        &mut writer,
+        &crate::types::ClientMessage::Exec {
+            program: command,
+            args: Vec::new(),
+        },
+    )?;
 
     let writer = Arc::new(Mutex::new(writer));
     let writer_for_stdin = Arc::clone(&writer);
@@ -24,7 +30,8 @@ pub fn run_client(program: String, args: Vec<String>) -> anyhow::Result<i32> {
     let mut stderr = io::stderr();
     let mut exit_code = 1;
 
-    while let Some(msg) = crate::codec::recv_message::<_, crate::types::ServerMessage>(&mut reader)? {
+    while let Some(msg) = crate::codec::recv_message::<_, crate::types::ServerMessage>(&mut reader)?
+    {
         match msg {
             crate::types::ServerMessage::Stdout { data } => {
                 stdout.write_all(&data)?;

@@ -7,6 +7,7 @@ pub struct DaemonConfig {
     pub port: u16,
     pub user: String,
     pub password: Option<String>,
+    pub workdir: Option<String>,
 }
 
 /// Messages sent from the client-side helper to the daemon.

@@ -7,6 +7,24 @@ use russh::ChannelMsg;
 
 /// Escape and join program + args for remote shell execution.
 pub fn render_remote_command(program: &str, args: &[String]) -> String {
+    render_remote_command_with_workdir(None, program, args)
+}
+
+/// Prefix the remote command with a shell `cd` when a working directory is configured.
+pub fn render_remote_command_with_workdir(
+    workdir: Option<&str>,
+    program: &str,
+    args: &[String],
+) -> String {
+    let command = render_command(program, args);
+
+    match workdir.map(str::trim).filter(|workdir| !workdir.is_empty()) {
+        Some(workdir) => format!("cd {} && {}", shell_quote(workdir), command),
+        None => command,
+    }
+}
+
+fn render_command(program: &str, args: &[String]) -> String {
     if args.is_empty() {
         return program.to_string();
     }
@@ -93,9 +111,12 @@ pub async fn run_remote_command(
         .await
         .context("failed to execute remote command")?;
 
-    let (stdin_tx, mut stdin_rx) = tokio::sync::mpsc::unbounded_channel::<crate::types::ClientMessage>();
+    let (stdin_tx, mut stdin_rx) =
+        tokio::sync::mpsc::unbounded_channel::<crate::types::ClientMessage>();
     let stdin_thread = thread::spawn(move || -> std::io::Result<()> {
-        while let Some(msg) = crate::codec::recv_message::<_, crate::types::ClientMessage>(&mut ipc_reader)? {
+        while let Some(msg) =
+            crate::codec::recv_message::<_, crate::types::ClientMessage>(&mut ipc_reader)?
+        {
             if stdin_tx.send(msg).is_err() {
                 break;
             }
@@ -167,7 +188,10 @@ pub async fn run_remote_command(
         .await;
 
     let _ = stdin_thread;
-    crate::socket::send_server(&writer, crate::types::ServerMessage::Exit { code: exit_code })?;
+    crate::socket::send_server(
+        &writer,
+        crate::types::ServerMessage::Exit { code: exit_code },
+    )?;
 
     Ok(())
 }

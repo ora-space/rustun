@@ -21,6 +21,8 @@ struct Cli {
     password: Option<String>,
     #[arg(long)]
     ask_password: bool,
+    #[arg(long)]
+    workdir: Option<String>,
 }
 
 fn real_main() -> Result<()> {
@@ -35,6 +37,7 @@ fn real_main() -> Result<()> {
         port: cli.port,
         user: cli.user,
         password,
+        workdir: cli.workdir,
     };
 
     rustun::run_daemon_with_config(config)
@@ -65,7 +68,7 @@ mod tests {
 
     #[test]
     fn parse_required_remote_options() {
-        let cli = Cli::parse_from([
+        let cli = Cli::try_parse_from([
             "rustund",
             "--host",
             "127.0.0.1",
@@ -73,12 +76,17 @@ mod tests {
             "22",
             "--user",
             "root",
+            "--workdir",
+            "/srv/app",
         ]);
+
+        let cli = cli.expect("cli should parse");
 
         assert_eq!(cli.host, "127.0.0.1");
         assert_eq!(cli.port, 22);
         assert_eq!(cli.user, "root");
         assert!(!cli.ask_password);
+        assert_eq!(cli.workdir.as_deref(), Some("/srv/app"));
         assert_eq!(cli.password, None);
     }
 
